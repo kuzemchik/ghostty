@@ -308,6 +308,7 @@ const DerivedConfig = struct {
     clipboard_trim_trailing_spaces: bool,
     clipboard_paste_protection: bool,
     clipboard_paste_bracketed_safe: bool,
+    clipboard_paste_translate_newlines: bool,
     clipboard_codepoint_map: configpkg.Config.RepeatableClipboardCodepointMap,
     copy_on_select: configpkg.CopyOnSelect,
     right_click_action: configpkg.RightClickAction,
@@ -387,6 +388,7 @@ const DerivedConfig = struct {
             .clipboard_trim_trailing_spaces = config.@"clipboard-trim-trailing-spaces",
             .clipboard_paste_protection = config.@"clipboard-paste-protection",
             .clipboard_paste_bracketed_safe = config.@"clipboard-paste-bracketed-safe",
+            .clipboard_paste_translate_newlines = config.@"clipboard-paste-translate-newlines",
             .clipboard_codepoint_map = try config.@"clipboard-codepoint-map".clone(alloc),
             .copy_on_select = config.@"copy-on-select",
             .right_click_action = config.@"right-click-action",
@@ -6068,7 +6070,8 @@ fn completeClipboardPaste(
     const encode_opts: input.paste.Options = encode_opts: {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
-        const opts: input.paste.Options = .fromTerminal(&self.io.terminal);
+        var opts: input.paste.Options = .fromTerminal(&self.io.terminal);
+        opts.translate_newlines = self.config.clipboard_paste_translate_newlines;
 
         // If we have paste protection enabled, we detect unsafe pastes and return
         // an error. The error approach allows apprt to attempt to complete the paste

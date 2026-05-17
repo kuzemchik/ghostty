@@ -2377,6 +2377,14 @@ keybind: Keybinds = .{},
 /// program, not the terminal emulator).
 @"clipboard-paste-bracketed-safe": bool = true,
 
+/// If true, translate `\n` (line feed) to `\r` (carriage return) in pasted
+/// content even when bracketed paste mode is enabled. Non-bracketed pastes
+/// always perform this translation (matching xterm); enabling this option
+/// extends the same translation to bracketed pastes (matching iTerm2).
+///
+/// The default is false to preserve existing behavior.
+@"clipboard-paste-translate-newlines": bool = false,
+
 /// Enables or disabled title reporting (CSI 21 t). This escape sequence
 /// allows the running program to query the terminal title. This is a common
 /// security issue and is disabled by default.

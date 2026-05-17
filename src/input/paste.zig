@@ -5,6 +5,12 @@ pub const Options = struct {
     /// True if bracketed paste mode is on.
     bracketed: bool,
 
+    /// When true, translate `\n` to `\r` in the paste content even when
+    /// bracketed paste mode is on. The non-bracketed path always performs
+    /// this translation (matching xterm); setting this to true makes the
+    /// bracketed path also translate (matching iTerm2).
+    translate_newlines: bool = false,
+
     /// Return the encoding options based on the current terminal state.
     pub fn fromTerminal(t: *const Terminal) Options {
         return .{
@@ -95,16 +101,17 @@ pub fn encode(
     if (opts.bracketed) {
         result[0] = "\x1b[200~";
         result[2] = "\x1b[201~";
-        return result;
     }
 
-    // Non-bracketed. We have to replace newline with `\r`. This matches
-    // the behavior of xterm and other terminals. For `\r\n` this will
-    // result in `\r\r` which does match xterm.
-    if (comptime mutable) {
-        std.mem.replaceScalar(u8, data, '\n', '\r');
-    } else if (std.mem.indexOfScalar(u8, data, '\n') != null) {
-        return Error.MutableRequired;
+    // Translate `\n` to `\r` in the content. This is always done for
+    // non-bracketed pastes (matching xterm). For bracketed pastes it is
+    // gated by `translate_newlines` (matches iTerm2 when set).
+    if (!opts.bracketed or opts.translate_newlines) {
+        if (comptime mutable) {
+            std.mem.replaceScalar(u8, data, '\n', '\r');
+        } else if (std.mem.indexOfScalar(u8, data, '\n') != null) {
+            return Error.MutableRequired;
+        }
     }
 
     return result;
@@ -189,6 +196,51 @@ test "encode unbracketed windows-stye newline" {
     try testing.expectEqualStrings("", result[0]);
     try testing.expectEqualStrings("hello\r\rworld", result[1]);
     try testing.expectEqualStrings("", result[2]);
+}
+
+test "encode bracketed preserves newlines by default" {
+    const testing = std.testing;
+    // Default: translate_newlines=false -> bracketed pastes keep \n as-is.
+    const result = try encode(
+        @as([]const u8, "hello\nworld"),
+        .{ .bracketed = true },
+    );
+    try testing.expectEqualStrings("\x1b[200~", result[0]);
+    try testing.expectEqualStrings("hello\nworld", result[1]);
+    try testing.expectEqualStrings("\x1b[201~", result[2]);
+}
+
+test "encode bracketed translate_newlines replaces newlines" {
+    const testing = std.testing;
+    // translate_newlines=true -> bracketed pastes also translate \n -> \r,
+    // matching iTerm2.
+    const data: []u8 = try testing.allocator.dupe(u8, "hello\nworld");
+    defer testing.allocator.free(data);
+    const result = encode(data, .{ .bracketed = true, .translate_newlines = true });
+    try testing.expectEqualStrings("\x1b[200~", result[0]);
+    try testing.expectEqualStrings("hello\rworld", result[1]);
+    try testing.expectEqualStrings("\x1b[201~", result[2]);
+}
+
+test "encode bracketed translate_newlines const requires mutable" {
+    const testing = std.testing;
+    // When data contains \n and translate_newlines is enabled in bracketed
+    // mode, the const path must signal that a mutable copy is required.
+    try testing.expectError(Error.MutableRequired, encode(
+        @as([]const u8, "hello\nworld"),
+        .{ .bracketed = true, .translate_newlines = true },
+    ));
+}
+
+test "encode bracketed translate_newlines windows-style newline" {
+    const testing = std.testing;
+    // \r\n becomes \r\r, matching the non-bracketed xterm behavior.
+    const data: []u8 = try testing.allocator.dupe(u8, "hello\r\nworld");
+    defer testing.allocator.free(data);
+    const result = encode(data, .{ .bracketed = true, .translate_newlines = true });
+    try testing.expectEqualStrings("\x1b[200~", result[0]);
+    try testing.expectEqualStrings("hello\r\rworld", result[1]);
+    try testing.expectEqualStrings("\x1b[201~", result[2]);
 }
 
 test "encode strip unsafe bytes const" {
